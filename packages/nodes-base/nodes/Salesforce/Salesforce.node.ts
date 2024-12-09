@@ -9,7 +9,7 @@ import type {
 	JsonObject,
 	IHttpRequestMethods,
 } from 'n8n-workflow';
-import { NodeApiError, NodeOperationError } from 'n8n-workflow';
+import { NodeApiError, NodeConnectionType, NodeOperationError } from 'n8n-workflow';
 
 import { accountFields, accountOperations } from './AccountDescription';
 
@@ -72,8 +72,8 @@ export class Salesforce implements INodeType {
 		defaults: {
 			name: 'Salesforce',
 		},
-		inputs: ['main'],
-		outputs: ['main'],
+		inputs: [NodeConnectionType.Main],
+		outputs: [NodeConnectionType.Main],
 		credentials: [
 			{
 				name: 'salesforceOAuth2Api',
@@ -1039,7 +1039,7 @@ export class Salesforce implements INodeType {
 			// async getFolders(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
 			// 	const returnData: INodePropertyOptions[] = [];
 			// 	const fields = await salesforceApiRequestAllItems.call(this, 'records', 'GET', '/sobjects/folder/describe');
-			// 	console.log(JSON.stringify(fields, undefined, 2))
+			// 	this.logger.debug(JSON.stringify(fields, undefined, 2))
 			// 	const qs = {
 			// 		//ContentFolderItem ContentWorkspace ContentFolder
 			// 		q: `SELECT Id, Title FROM ContentVersion`,
@@ -3084,7 +3084,7 @@ export class Salesforce implements INodeType {
 
 				returnData.push(...executionData);
 			} catch (error) {
-				if (this.continueOnFail(error)) {
+				if (this.continueOnFail()) {
 					const executionErrorData = this.helpers.constructExecutionMetaData(
 						this.helpers.returnJsonArray({ error: error.message }),
 						{ itemData: { item: i } },

@@ -1,25 +1,46 @@
-import { mock } from 'jest-mock-extended';
-import { TelemetryEventRelay } from '@/events/telemetry-event-relay';
-import { EventService } from '@/events/event.service';
-import config from '@/config';
-import type { IWorkflowBase } from 'n8n-workflow';
-import type { IWorkflowDb } from '@/Interfaces';
-import type { Telemetry } from '@/telemetry';
-import type { License } from '@/License';
 import type { GlobalConfig } from '@n8n/config';
+import { mock } from 'jest-mock-extended';
+import type { IWorkflowBase } from 'n8n-workflow';
+
+import { N8N_VERSION } from '@/constants';
+import type { WorkflowEntity } from '@/databases/entities/workflow-entity';
+import type { ProjectRelationRepository } from '@/databases/repositories/project-relation.repository';
+import type { SharedWorkflowRepository } from '@/databases/repositories/shared-workflow.repository';
 import type { WorkflowRepository } from '@/databases/repositories/workflow.repository';
-import type { NodeTypes } from '@/NodeTypes';
-import type { SharedWorkflowRepository } from '@/databases/repositories/sharedWorkflow.repository';
-import type { ProjectRelationRepository } from '@/databases/repositories/projectRelation.repository';
-import type { RelayEventMap } from '@/events/relay-event-map';
-import type { WorkflowEntity } from '@/databases/entities/WorkflowEntity';
+import { EventService } from '@/events/event.service';
+import type { RelayEventMap } from '@/events/maps/relay.event-map';
+import { TelemetryEventRelay } from '@/events/relays/telemetry.event-relay';
+import type { IWorkflowDb } from '@/interfaces';
+import type { License } from '@/license';
+import type { NodeTypes } from '@/node-types';
+import type { Telemetry } from '@/telemetry';
 
 const flushPromises = async () => await new Promise((resolve) => setImmediate(resolve));
 
 describe('TelemetryEventRelay', () => {
 	const telemetry = mock<Telemetry>();
 	const license = mock<License>();
-	const globalConfig = mock<GlobalConfig>({ userManagement: { emails: { mode: 'smtp' } } });
+	const globalConfig = mock<GlobalConfig>({
+		userManagement: {
+			emails: {
+				mode: 'smtp',
+			},
+		},
+		endpoints: {
+			metrics: {
+				enable: true,
+				includeDefaultMetrics: true,
+				includeApiEndpoints: false,
+				includeCacheMetrics: false,
+				includeMessageEventBusMetrics: false,
+				includeQueueMetrics: false,
+			},
+		},
+		logging: {
+			level: 'info',
+			outputs: ['console'],
+		},
+	});
 	const workflowRepository = mock<WorkflowRepository>();
 	const nodeTypes = mock<NodeTypes>();
 	const sharedWorkflowRepository = mock<SharedWorkflowRepository>();
@@ -44,7 +65,7 @@ describe('TelemetryEventRelay', () => {
 	});
 
 	beforeEach(() => {
-		config.set('diagnostics.enabled', true);
+		globalConfig.diagnostics.enabled = true;
 	});
 
 	afterEach(() => {
@@ -53,7 +74,7 @@ describe('TelemetryEventRelay', () => {
 
 	describe('init', () => {
 		it('with diagnostics enabled, should init telemetry and register listeners', async () => {
-			config.set('diagnostics.enabled', true);
+			globalConfig.diagnostics.enabled = true;
 			const telemetryEventRelay = new TelemetryEventRelay(
 				eventService,
 				telemetry,
@@ -74,7 +95,7 @@ describe('TelemetryEventRelay', () => {
 		});
 
 		it('with diagnostics disabled, should neither init telemetry nor register listeners', async () => {
-			config.set('diagnostics.enabled', false);
+			globalConfig.diagnostics.enabled = false;
 			const telemetryEventRelay = new TelemetryEventRelay(
 				eventService,
 				telemetry,
@@ -694,7 +715,7 @@ describe('TelemetryEventRelay', () => {
 				is_manual: false,
 				success: false,
 				user_id: 'user123',
-				version_cli: '1.54.0',
+				version_cli: N8N_VERSION,
 				workflow_id: 'workflow123',
 			});
 		});
@@ -847,10 +868,10 @@ describe('TelemetryEventRelay', () => {
 			const event: RelayEventMap['user-submitted-personalization-survey'] = {
 				userId: 'user123',
 				answers: {
+					version: 'v4',
+					personalization_survey_n8n_version: '1.0.0',
+					personalization_survey_submitted_at: '2021-10-01T00:00:00.000Z',
 					companySize: '1-10',
-					workArea: 'IT',
-					automationGoal: 'Improve efficiency',
-					valueExpectation: 'Time savings',
 				},
 			};
 
@@ -858,10 +879,10 @@ describe('TelemetryEventRelay', () => {
 
 			expect(telemetry.track).toHaveBeenCalledWith('User responded to personalization questions', {
 				user_id: 'user123',
+				version: 'v4',
+				personalization_survey_n8n_version: '1.0.0',
+				personalization_survey_submitted_at: '2021-10-01T00:00:00.000Z',
 				company_size: '1-10',
-				work_area: 'IT',
-				automation_goal: 'Improve efficiency',
-				value_expectation: 'Time savings',
 			});
 		});
 
@@ -926,6 +947,14 @@ describe('TelemetryEventRelay', () => {
 				'Instance started',
 				expect.objectContaining({
 					earliest_workflow_created: firstWorkflow.createdAt,
+					metrics: {
+						metrics_enabled: true,
+						metrics_category_default: true,
+						metrics_category_routes: false,
+						metrics_category_cache: false,
+						metrics_category_logs: false,
+						metrics_category_queue: false,
+					},
 				}),
 			);
 		});
@@ -1025,6 +1054,24 @@ describe('TelemetryEventRelay', () => {
 					public_api: false,
 				},
 			);
+		});
+	});
+
+	describe('Community+ registered', () => {
+		it('should track `license-community-plus-registered` event', () => {
+			const event: RelayEventMap['license-community-plus-registered'] = {
+				userId: 'user123',
+				email: 'user@example.com',
+				licenseKey: 'license123',
+			};
+
+			eventService.emit('license-community-plus-registered', event);
+
+			expect(telemetry.track).toHaveBeenCalledWith('User registered for license community plus', {
+				user_id: 'user123',
+				email: 'user@example.com',
+				licenseKey: 'license123',
+			});
 		});
 	});
 });

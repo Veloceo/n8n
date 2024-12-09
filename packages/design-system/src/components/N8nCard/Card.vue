@@ -1,25 +1,3 @@
-<template>
-	<div :class="classes" v-bind="$attrs">
-		<div v-if="$slots.prepend" :class="$style.icon">
-			<slot name="prepend" />
-		</div>
-		<div :class="$style.content">
-			<div v-if="$slots.header" :class="$style.header">
-				<slot name="header" />
-			</div>
-			<div v-if="$slots.default" :class="$style.body">
-				<slot />
-			</div>
-			<div v-if="$slots.footer" :class="$style.footer">
-				<slot name="footer" />
-			</div>
-		</div>
-		<div v-if="$slots.append" :class="$style.append">
-			<slot name="append" />
-		</div>
-	</div>
-</template>
-
 <script lang="ts" setup>
 import { computed, useCssModule } from 'vue';
 
@@ -39,6 +17,28 @@ const classes = computed(() => ({
 	[$style.hoverable]: props.hoverable,
 }));
 </script>
+
+<template>
+	<div :class="classes" v-bind="$attrs">
+		<div v-if="$slots.prepend" data-test-id="card-prepend" :class="$style.icon">
+			<slot name="prepend" />
+		</div>
+		<div :class="$style.content" data-test-id="card-content">
+			<div v-if="$slots.header" :class="$style.header">
+				<slot name="header" />
+			</div>
+			<div v-if="$slots.default" :class="$style.body">
+				<slot />
+			</div>
+			<div v-if="$slots.footer" :class="$style.footer">
+				<slot name="footer" />
+			</div>
+		</div>
+		<div v-if="$slots.append" data-test-id="card-append" :class="$style.append">
+			<slot name="append" />
+		</div>
+	</div>
+</template>
 
 <style lang="scss" module>
 .card {

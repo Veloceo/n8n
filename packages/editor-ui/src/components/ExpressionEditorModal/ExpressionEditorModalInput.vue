@@ -1,7 +1,3 @@
-<template>
-	<div ref="root" :class="$style.editor" @keydown.stop></div>
-</template>
-
 <script setup lang="ts">
 import { history } from '@codemirror/commands';
 import { Prec } from '@codemirror/state';
@@ -78,7 +74,7 @@ const { segments, readEditorValue, editor, hasFocus, focus } = useExpressionEdit
 	editorRef: root,
 	editorValue,
 	extensions,
-	isReadOnly: props.isReadOnly,
+	isReadOnly: computed(() => props.isReadOnly),
 	autocompleteTelemetry: { enabled: true, parameterPath: props.path },
 });
 
@@ -109,8 +105,20 @@ onMounted(() => {
 defineExpose({ editor });
 </script>
 
+<template>
+	<div ref="root" :class="$style.editor" @keydown.stop></div>
+</template>
+
 <style lang="scss" module>
-:global(.cm-content) {
-	border-radius: var(--border-radius-base);
+.editor {
+	:global(.cm-content) {
+		border-radius: var(--border-radius-base);
+		&[aria-readonly='true'] {
+			--disabled-fill: var(--color-background-base);
+			background-color: var(--disabled-fill, var(--color-background-light));
+			color: var(--disabled-color, var(--color-text-base));
+			cursor: not-allowed;
+		}
+	}
 }
 </style>

@@ -7,6 +7,15 @@
 
 /* eslint-disable @typescript-eslint/prefer-nullish-coalescing */
 
+import {
+	MANUAL_CHAT_TRIGGER_LANGCHAIN_NODE_TYPE,
+	NODES_WITH_RENAMABLE_CONTENT,
+	STARTING_NODE_TYPES,
+} from './Constants';
+import type { IDeferredPromise } from './DeferredPromise';
+import { ApplicationError } from './errors/application.error';
+import { Expression } from './Expression';
+import { getGlobalState } from './GlobalState';
 import type {
 	IConnections,
 	IExecuteResponsePromiseData,
@@ -41,24 +50,13 @@ import type {
 	IRun,
 	IRunNodeResponse,
 	NodeParameterValueType,
-	ConnectionTypes,
 	CloseFunction,
 	INodeOutputConfiguration,
 } from './Interfaces';
 import { Node, NodeConnectionType } from './Interfaces';
-import type { IDeferredPromise } from './DeferredPromise';
-
 import * as NodeHelpers from './NodeHelpers';
 import * as ObservableObject from './ObservableObject';
 import { RoutingNode } from './RoutingNode';
-import { Expression } from './Expression';
-import {
-	MANUAL_CHAT_TRIGGER_LANGCHAIN_NODE_TYPE,
-	NODES_WITH_RENAMABLE_CONTENT,
-	STARTING_NODE_TYPES,
-} from './Constants';
-import { ApplicationError } from './errors/application.error';
-import { getGlobalState } from './GlobalState';
 
 function dedupe<T>(arr: T[]): T[] {
 	return [...new Set(arr)];
@@ -182,7 +180,8 @@ export class Workflow {
 					if (!connections[sourceNode][type].hasOwnProperty(inputIndex)) {
 						continue;
 					}
-					for (connectionInfo of connections[sourceNode][type][inputIndex]) {
+
+					for (connectionInfo of connections[sourceNode][type][inputIndex] ?? []) {
 						if (!returnConnection.hasOwnProperty(connectionInfo.node)) {
 							returnConnection[connectionInfo.node] = {};
 						}
@@ -195,7 +194,7 @@ export class Workflow {
 							returnConnection[connectionInfo.node][connectionInfo.type].push([]);
 						}
 
-						returnConnection[connectionInfo.node][connectionInfo.type][connectionInfo.index].push({
+						returnConnection[connectionInfo.node][connectionInfo.type][connectionInfo.index]?.push({
 							node: sourceNode,
 							type,
 							index: parseInt(inputIndex, 10),
@@ -436,7 +435,7 @@ export class Workflow {
 			) {
 				// Is expression so has to be rewritten
 				// To not run the "expensive" regex stuff when it is not needed
-				// make a simple check first if it really contains the the node-name
+				// make a simple check first if it really contains the node-name
 				if (parameterValue.includes(currentName)) {
 					// Really contains node-name (even though we do not know yet if really as $node-expression)
 
@@ -552,18 +551,18 @@ export class Workflow {
 		let type: string;
 		let sourceIndex: string;
 		let connectionIndex: string;
-		let connectionData: IConnection;
+		let connectionData: IConnection | undefined;
 		for (sourceNode of Object.keys(this.connectionsBySourceNode)) {
 			for (type of Object.keys(this.connectionsBySourceNode[sourceNode])) {
 				for (sourceIndex of Object.keys(this.connectionsBySourceNode[sourceNode][type])) {
 					for (connectionIndex of Object.keys(
-						this.connectionsBySourceNode[sourceNode][type][parseInt(sourceIndex, 10)],
+						this.connectionsBySourceNode[sourceNode][type][parseInt(sourceIndex, 10)] || [],
 					)) {
 						connectionData =
-							this.connectionsBySourceNode[sourceNode][type][parseInt(sourceIndex, 10)][
+							this.connectionsBySourceNode[sourceNode][type][parseInt(sourceIndex, 10)]?.[
 								parseInt(connectionIndex, 10)
 							];
-						if (connectionData.node === currentName) {
+						if (connectionData?.node === currentName) {
 							connectionData.node = newName;
 						}
 					}
@@ -580,11 +579,11 @@ export class Workflow {
 	/**
 	 * Finds the highest parent nodes of the node with the given name
 	 *
-	 * @param {ConnectionTypes} [type='main']
+	 * @param {NodeConnectionType} [type='main']
 	 */
 	getHighestNode(
 		nodeName: string,
-		type: ConnectionTypes = 'main',
+		type: NodeConnectionType = NodeConnectionType.Main,
 		nodeConnectionIndex?: number,
 		checkedNodes?: string[],
 	): string[] {
@@ -616,7 +615,7 @@ export class Workflow {
 		const returnNodes: string[] = [];
 		let addNodes: string[];
 
-		let connectionsByIndex: IConnection[];
+		let connectionsByIndex: IConnection[] | null;
 		for (
 			let connectionIndex = 0;
 			connectionIndex < this.connectionsByDestinationNode[nodeName][type].length;
@@ -628,7 +627,7 @@ export class Workflow {
 			}
 			connectionsByIndex = this.connectionsByDestinationNode[nodeName][type][connectionIndex];
 			// eslint-disable-next-line @typescript-eslint/no-loop-func
-			connectionsByIndex.forEach((connection) => {
+			connectionsByIndex?.forEach((connection) => {
 				if (checkedNodes.includes(connection.node)) {
 					// Node got checked already before
 					return;
@@ -664,7 +663,7 @@ export class Workflow {
 	 */
 	getChildNodes(
 		nodeName: string,
-		type: ConnectionTypes | 'ALL' | 'ALL_NON_MAIN' = 'main',
+		type: NodeConnectionType | 'ALL' | 'ALL_NON_MAIN' = NodeConnectionType.Main,
 		depth = -1,
 	): string[] {
 		return this.getConnectedNodes(this.connectionsBySourceNode, nodeName, type, depth);
@@ -673,12 +672,12 @@ export class Workflow {
 	/**
 	 * Returns all the nodes before the given one
 	 *
-	 * @param {ConnectionTypes} [type='main']
+	 * @param {NodeConnectionType} [type='main']
 	 * @param {*} [depth=-1]
 	 */
 	getParentNodes(
 		nodeName: string,
-		type: ConnectionTypes | 'ALL' | 'ALL_NON_MAIN' = 'main',
+		type: NodeConnectionType | 'ALL' | 'ALL_NON_MAIN' = NodeConnectionType.Main,
 		depth = -1,
 	): string[] {
 		return this.getConnectedNodes(this.connectionsByDestinationNode, nodeName, type, depth);
@@ -688,13 +687,13 @@ export class Workflow {
 	 * Gets all the nodes which are connected nodes starting from
 	 * the given one
 	 *
-	 * @param {ConnectionTypes} [type='main']
+	 * @param {NodeConnectionType} [type='main']
 	 * @param {*} [depth=-1]
 	 */
 	getConnectedNodes(
 		connections: IConnections,
 		nodeName: string,
-		connectionType: ConnectionTypes | 'ALL' | 'ALL_NON_MAIN' = 'main',
+		connectionType: NodeConnectionType | 'ALL' | 'ALL_NON_MAIN' = NodeConnectionType.Main,
 		depth = -1,
 		checkedNodesIncoming?: string[],
 	): string[] {
@@ -710,13 +709,13 @@ export class Workflow {
 			return [];
 		}
 
-		let types: ConnectionTypes[];
+		let types: NodeConnectionType[];
 		if (connectionType === 'ALL') {
-			types = Object.keys(connections[nodeName]) as ConnectionTypes[];
+			types = Object.keys(connections[nodeName]) as NodeConnectionType[];
 		} else if (connectionType === 'ALL_NON_MAIN') {
 			types = Object.keys(connections[nodeName]).filter(
 				(type) => type !== 'main',
-			) as ConnectionTypes[];
+			) as NodeConnectionType[];
 		} else {
 			types = [connectionType];
 		}
@@ -743,7 +742,7 @@ export class Workflow {
 			checkedNodes.push(nodeName);
 
 			connections[nodeName][type].forEach((connectionsByIndex) => {
-				connectionsByIndex.forEach((connection) => {
+				connectionsByIndex?.forEach((connection) => {
 					if (checkedNodes.includes(connection.node)) {
 						// Node got checked already before
 						return;
@@ -800,7 +799,7 @@ export class Workflow {
 	searchNodesBFS(connections: IConnections, sourceNode: string, maxDepth = -1): IConnectedNode[] {
 		const returnConns: IConnectedNode[] = [];
 
-		const type: ConnectionTypes = 'main';
+		const type: NodeConnectionType = NodeConnectionType.Main;
 		let queue: IConnectedNode[] = [];
 		queue.push({
 			name: sourceNode,
@@ -840,7 +839,7 @@ export class Workflow {
 				}
 
 				connections[curr.name][type].forEach((connectionsByIndex) => {
-					connectionsByIndex.forEach((connection) => {
+					connectionsByIndex?.forEach((connection) => {
 						queue.push({
 							name: connection.node,
 							indicies: [connection.index],
@@ -907,7 +906,7 @@ export class Workflow {
 	getNodeConnectionIndexes(
 		nodeName: string,
 		parentNodeName: string,
-		type: ConnectionTypes = 'main',
+		type: NodeConnectionType = NodeConnectionType.Main,
 		depth = -1,
 		checkedNodes?: string[],
 	): INodeConnection | undefined {
@@ -944,6 +943,10 @@ export class Workflow {
 
 		let outputIndex: INodeConnection | undefined;
 		for (const connectionsByIndex of this.connectionsByDestinationNode[nodeName][type]) {
+			if (!connectionsByIndex) {
+				continue;
+			}
+
 			for (
 				let destinationIndex = 0;
 				destinationIndex < connectionsByIndex.length;

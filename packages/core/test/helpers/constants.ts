@@ -5,7 +5,9 @@ import type {
 	WorkflowTestData,
 } from 'n8n-workflow';
 import { NodeConnectionType } from 'n8n-workflow';
+
 import { If } from '../../../nodes-base/dist/nodes/If/If.node';
+import { ManualTrigger } from '../../../nodes-base/dist/nodes/ManualTrigger/ManualTrigger.node';
 import { Merge } from '../../../nodes-base/dist/nodes/Merge/Merge.node';
 import { NoOp } from '../../../nodes-base/dist/nodes/NoOp/NoOp.node';
 import { Set } from '../../../nodes-base/dist/nodes/Set/Set.node';
@@ -32,6 +34,10 @@ export const predefinedNodesTypes: INodeTypeData = {
 		type: new Start(),
 		sourcePath: '',
 	},
+	'n8n-nodes-base.manualTrigger': {
+		type: new ManualTrigger(),
+		sourcePath: '',
+	},
 	'n8n-nodes-base.versionTest': {
 		sourcePath: '',
 		type: {
@@ -45,8 +51,8 @@ export const predefinedNodesTypes: INodeTypeData = {
 					name: 'Version Test',
 					color: '#0000FF',
 				},
-				inputs: ['main'],
-				outputs: ['main'],
+				inputs: [NodeConnectionType.Main],
+				outputs: [NodeConnectionType.Main],
 				properties: [
 					{
 						displayName: 'Display V1',

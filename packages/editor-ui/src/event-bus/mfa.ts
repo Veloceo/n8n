@@ -3,12 +3,15 @@ import { createEventBus } from 'n8n-design-system/utils';
 export const mfaEventBus = createEventBus();
 
 export interface MfaModalClosedEventPayload {
-	mfaCode: string;
+	mfaCode?: string;
+	mfaRecoveryCode?: string;
 }
 
 export interface MfaModalEvents {
+	/** Command to request closing of the modal */
 	close: MfaModalClosedEventPayload | undefined;
 
+	/** Event that the modal has been closed */
 	closed: MfaModalClosedEventPayload | undefined;
 }
 

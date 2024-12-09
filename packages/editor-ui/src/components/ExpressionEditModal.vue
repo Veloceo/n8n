@@ -1,7 +1,144 @@
+<script setup lang="ts">
+import ExpressionEditorModalInput from '@/components/ExpressionEditorModal/ExpressionEditorModalInput.vue';
+import { computed, ref, toRaw, watch } from 'vue';
+import Close from 'virtual:icons/mdi/close';
+
+import { useExternalHooks } from '@/composables/useExternalHooks';
+import { useNDVStore } from '@/stores/ndv.store';
+import { useWorkflowsStore } from '@/stores/workflows.store';
+import { createExpressionTelemetryPayload } from '@/utils/telemetryUtils';
+
+import { useTelemetry } from '@/composables/useTelemetry';
+import type { Segment } from '@/types/expressions';
+import type { INodeProperties } from 'n8n-workflow';
+import { NodeConnectionType } from 'n8n-workflow';
+import { outputTheme } from './ExpressionEditorModal/theme';
+import ExpressionOutput from './InlineExpressionEditor/ExpressionOutput.vue';
+import RunDataSchema from './RunDataSchema.vue';
+import OutputItemSelect from './InlineExpressionEditor/OutputItemSelect.vue';
+import { useI18n } from '@/composables/useI18n';
+import { useDebounce } from '@/composables/useDebounce';
+import DraggableTarget from './DraggableTarget.vue';
+import { dropInExpressionEditor } from '@/plugins/codemirror/dragAndDrop';
+
+import { APP_MODALS_ELEMENT_ID } from '@/constants';
+import { N8nInput, N8nText } from 'n8n-design-system';
+import { N8nResizeWrapper, type ResizeData } from 'n8n-design-system';
+import { useThrottleFn } from '@vueuse/core';
+
+const DEFAULT_LEFT_SIDEBAR_WIDTH = 360;
+
+type Props = {
+	parameter: INodeProperties;
+	path: string;
+	modelValue: string;
+	dialogVisible?: boolean;
+	eventSource?: string;
+	redactValues?: boolean;
+	isReadOnly?: boolean;
+};
+
+const props = withDefaults(defineProps<Props>(), {
+	eventSource: '',
+	dialogVisible: false,
+	redactValues: false,
+	isReadOnly: false,
+});
+const emit = defineEmits<{
+	'update:model-value': [value: string];
+	closeDialog: [];
+}>();
+
+const ndvStore = useNDVStore();
+const workflowsStore = useWorkflowsStore();
+
+const telemetry = useTelemetry();
+const i18n = useI18n();
+const externalHooks = useExternalHooks();
+const { debounce } = useDebounce();
+
+const segments = ref<Segment[]>([]);
+const search = ref('');
+const appliedSearch = ref('');
+const sidebarWidth = ref(DEFAULT_LEFT_SIDEBAR_WIDTH);
+const expressionInputRef = ref<InstanceType<typeof ExpressionEditorModalInput>>();
+const expressionResultRef = ref<InstanceType<typeof ExpressionOutput>>();
+const theme = outputTheme();
+
+const activeNode = computed(() => ndvStore.activeNode);
+const workflow = computed(() => workflowsStore.getCurrentWorkflow());
+const inputEditor = computed(() => expressionInputRef.value?.editor);
+const parentNodes = computed(() => {
+	const node = activeNode.value;
+	if (!node) return [];
+	const nodes = workflow.value.getParentNodesByDepth(node.name);
+
+	return nodes.filter(({ name }) => name !== node.name);
+});
+
+watch(
+	() => props.dialogVisible,
+	(newValue) => {
+		const resolvedExpressionValue = expressionResultRef.value?.getValue() ?? '';
+
+		void externalHooks.run('expressionEdit.dialogVisibleChanged', {
+			dialogVisible: newValue,
+			parameter: props.parameter,
+			value: props.modelValue.toString(),
+			resolvedExpressionValue,
+		});
+
+		if (!newValue) {
+			const telemetryPayload = createExpressionTelemetryPayload(
+				segments.value,
+				props.modelValue.toString(),
+				workflowsStore.workflowId,
+				ndvStore.pushRef,
+				ndvStore.activeNode?.type ?? '',
+			);
+
+			telemetry.track('User closed Expression Editor', telemetryPayload);
+			void externalHooks.run('expressionEdit.closeDialog', telemetryPayload);
+		}
+	},
+);
+
+watch(
+	search,
+	debounce(
+		(newSearch: string) => {
+			appliedSearch.value = newSearch;
+		},
+		{ debounceTime: 500 },
+	),
+);
+
+function valueChanged(update: { value: string; segments: Segment[] }) {
+	segments.value = update.segments;
+	emit('update:model-value', update.value);
+}
+
+function closeDialog() {
+	emit('closeDialog');
+}
+
+async function onDrop(expression: string, event: MouseEvent) {
+	if (!inputEditor.value) return;
+
+	await dropInExpressionEditor(toRaw(inputEditor.value), event, expression);
+}
+
+function onResize(event: ResizeData) {
+	sidebarWidth.value = event.width;
+}
+
+const onResizeThrottle = useThrottleFn(onResize, 10);
+</script>
+
 <template>
 	<el-dialog
-		width="calc(100vw - var(--spacing-3xl))"
-		append-to-body
+		width="calc(100% - var(--spacing-3xl))"
+		:append-to="`#${APP_MODALS_ELEMENT_ID}`"
 		:class="$style.modal"
 		:model-value="dialogVisible"
 		:before-close="closeDialog"
@@ -10,27 +147,37 @@
 			<Close height="18" width="18" />
 		</button>
 		<div :class="$style.container">
-			<div :class="$style.sidebar">
-				<N8nInput
-					v-model="search"
-					size="small"
-					:class="$style.search"
-					:placeholder="i18n.baseText('ndv.search.placeholder.input.schema')"
-				>
-					<template #prefix>
-						<N8nIcon :class="$style.ioSearchIcon" icon="search" />
-					</template>
-				</N8nInput>
+			<N8nResizeWrapper
+				:width="sidebarWidth"
+				:min-width="200"
+				:style="{ width: `${sidebarWidth}px` }"
+				:grid-size="8"
+				:supported-directions="['left', 'right']"
+				@resize="onResizeThrottle"
+			>
+				<div :class="$style.sidebar">
+					<N8nInput
+						v-model="search"
+						size="small"
+						:class="$style.search"
+						:placeholder="i18n.baseText('ndv.search.placeholder.input.schema')"
+					>
+						<template #prefix>
+							<N8nIcon :class="$style.ioSearchIcon" icon="search" />
+						</template>
+					</N8nInput>
 
-				<RunDataSchema
-					:class="$style.schema"
-					:search="appliedSearch"
-					:nodes="parentNodes"
-					mapping-enabled
-					pane-type="input"
-					connection-type="main"
-				/>
-			</div>
+					<RunDataSchema
+						:class="$style.schema"
+						:search="appliedSearch"
+						:nodes="parentNodes"
+						:mapping-enabled="!isReadOnly"
+						:connection-type="NodeConnectionType.Main"
+						pane-type="input"
+						context="modal"
+					/>
+				</div>
+			</N8nResizeWrapper>
 
 			<div :class="$style.io">
 				<div :class="$style.input">
@@ -41,7 +188,7 @@
 						<N8nText
 							:class="$style.tip"
 							size="small"
-							v-html="i18n.baseText('expressionTip.javascript')"
+							v-n8n-html="i18n.baseText('expressionTip.javascript')"
 						/>
 					</div>
 
@@ -89,128 +236,6 @@
 	</el-dialog>
 </template>
 
-<script setup lang="ts">
-import ExpressionEditorModalInput from '@/components/ExpressionEditorModal/ExpressionEditorModalInput.vue';
-import { computed, ref, toRaw, watch } from 'vue';
-import Close from 'virtual:icons/mdi/close';
-
-import { useExternalHooks } from '@/composables/useExternalHooks';
-import { useNDVStore } from '@/stores/ndv.store';
-import { useWorkflowsStore } from '@/stores/workflows.store';
-import { createExpressionTelemetryPayload } from '@/utils/telemetryUtils';
-
-import { useTelemetry } from '@/composables/useTelemetry';
-import type { Segment } from '@/types/expressions';
-import type { INodeProperties } from 'n8n-workflow';
-import { outputTheme } from './ExpressionEditorModal/theme';
-import ExpressionOutput from './InlineExpressionEditor/ExpressionOutput.vue';
-import RunDataSchema from './RunDataSchema.vue';
-import OutputItemSelect from './InlineExpressionEditor/OutputItemSelect.vue';
-import { useI18n } from '@/composables/useI18n';
-import { useDebounce } from '@/composables/useDebounce';
-import DraggableTarget from './DraggableTarget.vue';
-import { dropInEditor } from '@/plugins/codemirror/dragAndDrop';
-
-type Props = {
-	parameter: INodeProperties;
-	path: string;
-	modelValue: string;
-	dialogVisible?: boolean;
-	eventSource?: string;
-	redactValues?: boolean;
-	isReadOnly?: boolean;
-};
-
-const props = withDefaults(defineProps<Props>(), {
-	eventSource: '',
-	dialogVisible: false,
-	redactValues: false,
-	isReadOnly: false,
-});
-const emit = defineEmits<{
-	'update:model-value': [value: string];
-	closeDialog: [];
-}>();
-
-const ndvStore = useNDVStore();
-const workflowsStore = useWorkflowsStore();
-
-const telemetry = useTelemetry();
-const i18n = useI18n();
-const externalHooks = useExternalHooks();
-const { debounce } = useDebounce();
-
-const segments = ref<Segment[]>([]);
-const search = ref('');
-const appliedSearch = ref('');
-const expressionInputRef = ref<InstanceType<typeof ExpressionEditorModalInput>>();
-const expressionResultRef = ref<InstanceType<typeof ExpressionOutput>>();
-const theme = outputTheme();
-
-const activeNode = computed(() => ndvStore.activeNode);
-const workflow = computed(() => workflowsStore.getCurrentWorkflow());
-const inputEditor = computed(() => expressionInputRef.value?.editor);
-const parentNodes = computed(() => {
-	const node = activeNode.value;
-	if (!node) return [];
-	const nodes = workflow.value.getParentNodesByDepth(node.name);
-
-	return nodes.filter(({ name }) => name !== node.name);
-});
-
-watch(
-	() => props.dialogVisible,
-	(newValue) => {
-		const resolvedExpressionValue = expressionResultRef.value?.getValue() ?? '';
-
-		void externalHooks.run('expressionEdit.dialogVisibleChanged', {
-			dialogVisible: newValue,
-			parameter: props.parameter,
-			value: props.modelValue,
-			resolvedExpressionValue,
-		});
-
-		if (!newValue) {
-			const telemetryPayload = createExpressionTelemetryPayload(
-				segments.value,
-				props.modelValue,
-				workflowsStore.workflowId,
-				ndvStore.pushRef,
-				ndvStore.activeNode?.type ?? '',
-			);
-
-			telemetry.track('User closed Expression Editor', telemetryPayload);
-			void externalHooks.run('expressionEdit.closeDialog', telemetryPayload);
-		}
-	},
-);
-
-watch(
-	search,
-	debounce(
-		(newSearch: string) => {
-			appliedSearch.value = newSearch;
-		},
-		{ debounceTime: 500 },
-	),
-);
-
-function valueChanged(update: { value: string; segments: Segment[] }) {
-	segments.value = update.segments;
-	emit('update:model-value', update.value);
-}
-
-function closeDialog() {
-	emit('closeDialog');
-}
-
-async function onDrop(expression: string, event: MouseEvent) {
-	if (!inputEditor.value) return;
-
-	await dropInEditor(toRaw(inputEditor.value), event, expression);
-}
-</script>
-
 <style module lang="scss">
 .modal {
 	--dialog-close-top: var(--spacing-m);
@@ -234,7 +259,7 @@ async function onDrop(expression: string, event: MouseEvent) {
 .container {
 	display: flex;
 	flex-flow: row nowrap;
-	gap: var(--spacing-s);
+	gap: var(--spacing-2xs);
 	height: 100%;
 }
 
