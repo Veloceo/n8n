@@ -3,8 +3,6 @@ ARG NODE_VERSION=20
 # 1. Create an image to build n8n
 FROM --platform=linux/amd64 n8nio/base:${NODE_VERSION} AS builder
 
-ENV N8N_PORT=80
-ENV PORT=80
 # ENV NODE_OPTIONS="--max-old-space-size=8192"
 
 # Build the application from source
@@ -64,5 +62,5 @@ RUN \
 
 ENV SHELL /bin/sh
 USER node
-EXPOSE 80
+EXPOSE 5678
 ENTRYPOINT ["tini", "--", "/docker-entrypoint.sh"]
