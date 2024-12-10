@@ -4,6 +4,7 @@ ARG NODE_VERSION=20
 FROM --platform=linux/amd64 n8nio/base:${NODE_VERSION} AS builder
 
 ENV N8N_PORT=80
+ENV PORT=80
 # ENV NODE_OPTIONS="--max-old-space-size=8192"
 
 # Build the application from source
